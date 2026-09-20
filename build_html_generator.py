@@ -1,17 +1,39 @@
 # -*- coding: utf-8 -*-
 """
 A-Share Continuous Dividend Analysis & HTML Dashboard Generator
-Strict criteria: Never interrupted cash dividends since IPO.
+Criteria:
+  1. Never interrupted cash dividends since IPO
+  2. Market Cap >= 200 亿元 only
+  3. Exclude Beijing Stock Exchange (北交所) & STAR Market (科创板 688)
 """
 import json
+import csv
 import statistics
+from generate_dividend_analysis import DATA
 
-# Load data
-with open("dividend_continuous_stocks.json", "r", encoding="utf-8") as f:
-    stocks = json.load(f)
+stocks = DATA
 
 # Sort by market cap descending
 stocks.sort(key=lambda x: x["market_cap"], reverse=True)
+
+# 1. Output JSON
+with open("dividend_continuous_stocks.json", "w", encoding="utf-8") as f:
+    json.dump(stocks, f, ensure_ascii=False, indent=2)
+print("Saved dividend_continuous_stocks.json")
+
+# 2. Output CSV
+fieldnames = [
+    "code", "name", "industry", "listing_date", "continuous_div_years",
+    "market_cap", "float_cap", "dividend_yield", "cagr_5y_non_drip", "cagr_5y_drip",
+    "is_less_than_5y", "actual_years_calculated", "business_scope",
+    "overseas_rev_pct", "domestic_rev_pct", "geography_detail", "business_model_moat", "div_policy"
+]
+with open("dividend_continuous_stocks.csv", "w", encoding="utf-8", newline="") as f:
+    writer = csv.DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in stocks:
+        writer.writerow(row)
+print("Saved dividend_continuous_stocks.csv")
 
 # Metrics
 total_stocks = len(stocks)
@@ -57,12 +79,11 @@ region_avg_nondrip = sum(s["cagr_5y_non_drip"] for s in region_list) / region_co
 # Sub-5 years list
 sub5y_list = [s for s in stocks if s["is_less_than_5y"]]
 
-# Cap tiers
+# Cap tiers (>= 200亿)
 tier_mega = [s for s in stocks if s["market_cap"] >= 10000]
-tier_large = [s for s in stocks if 1000 <= s["market_cap"] < 10000]
-tier_mid = [s for s in stocks if 200 <= s["market_cap"] < 1000]
-tier_small = [s for s in stocks if 50 <= s["market_cap"] < 200]
-tier_micro = [s for s in stocks if s["market_cap"] < 50]
+tier_large = [s for s in stocks if 3000 <= s["market_cap"] < 10000]
+tier_mid = [s for s in stocks if 1000 <= s["market_cap"] < 3000]
+tier_growth = [s for s in stocks if 200 <= s["market_cap"] < 1000]
 
 # Continuous years tiers
 years_25plus = [s for s in stocks if s["continuous_div_years"] >= 25]
@@ -73,14 +94,13 @@ years_under5 = [s for s in stocks if s["continuous_div_years"] < 5]
 # Top DRIP
 top_drip = sorted(stocks, key=lambda x: x["cagr_5y_drip"], reverse=True)[:10]
 
-# Build HTML
 parts = []
 parts.append(f"""<!DOCTYPE html>
 <html lang="zh-CN" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A股上市以来持续分红全勤股深度量化研报 (1993-2026)</title>
+    <title>A股持续分红全勤股深度量化研报 (市值≥200亿 · 排除北交所/688)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -114,7 +134,6 @@ parts.append(f"""<!DOCTYPE html>
             opacity: 1;
             color: #38bdf8;
         }}
-        /* Print styles */
         @media print {{
             header, button, select, input, #filter-panel {{
                 display: none !important;
@@ -133,12 +152,12 @@ parts.append(f"""<!DOCTYPE html>
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
                 <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-extrabold text-white text-base shadow-lg shadow-sky-500/25">
-                    分
+                    红
                 </div>
                 <div>
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                        A股持续分红全勤标的深度研报
-                        <span class="hidden sm:inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">1993-2026 全景</span>
+                        A股持续分红全勤研报 (≥200亿级)
+                        <span class="hidden sm:inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">无北交所 · 无688</span>
                     </h1>
                 </div>
             </div>
@@ -147,8 +166,8 @@ parts.append(f"""<!DOCTYPE html>
                 <a href="#marketcap-stats" class="text-slate-400 hover:text-sky-400 transition hidden sm:inline">市值统计</a>
                 <a href="#drip-analysis" class="text-slate-400 hover:text-sky-400 transition hidden md:inline">5年DRIP复合年化</a>
                 <a href="#sub5y-stocks" class="text-slate-400 hover:text-sky-400 transition hidden lg:inline">次新全勤专项</a>
-                <a href="#data-table-section" class="text-sky-400 font-semibold hover:text-sky-300 transition">全景数据表</a>
-                <button onclick="toggleTheme()" id="themeToggleBtn" class="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition" title="切换明亮/暗黑模式">
+                <a href="#data-table-section" class="text-sky-400 font-semibold hover:text-sky-300 transition">全景数据库</a>
+                <button onclick="toggleTheme()" id="themeToggleBtn" class="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition" title="切换明暗模式">
                     🌓
                 </button>
             </div>
@@ -162,25 +181,33 @@ parts.append(f"""<!DOCTYPE html>
         <div class="bg-gradient-to-r from-sky-950/80 via-slate-900 to-indigo-950/80 border border-sky-800/40 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
             <div class="absolute -right-10 -bottom-10 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
             <div class="relative z-10 space-y-4">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    硬核准入底线：自IPO上市以来现金分红全勤 · 绝不中断 (中断即排除)
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        条件 1：自IPO上市以来现金分红全勤 · 绝不中断
+                    </span>
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                        条件 2：总市值 ≥ 200 亿元
+                    </span>
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        条件 3：排除北交所 · 排除科创板 688
+                    </span>
                 </div>
                 <h2 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
-                    A股持续分红“长跑冠军”深度量化分析报告
+                    A股持续分红核心资产深度量化研报 (200亿+市值全勤标的)
                 </h2>
                 <p class="text-sm sm:text-base text-slate-300 max-w-4xl leading-relaxed">
-                    在全市场5300+只A股中，绝大部分企业受制于宏观周期或资本开支而发生过分红中断。本系统严格筛选出<strong>上市首年起现金分红从未发生过中断</strong>的极少数典范个股（涵盖超30年老牌蓝筹至近几年次新标杆）。系统从<strong>市值层级画像</strong>、<strong>近5年复合年化回报（DRIP分红再投资 vs 不drip）</strong>、<strong>上市不足5年样本按实际持有期折算年化</strong>、以及<strong>全球生意 vs 全国/大部分业务在中国 vs 特定区域垄断</strong>四大维度进行纵深穿透。
+                    在全市场5300+只A股中，遵照<strong>“上市以来年年分红无中断”、“总市值在200亿元及以上”、“剔除北交所及科创板688代码”</strong>的三重严苛筛选，最终提炼出 <strong>{total_stocks} 只</strong> 经受住宏观与行业周期检验的坚韧资产。涵盖其<strong>总市值 27.55 万亿元的层级结构</strong>、<strong>近5年复合年化（DRIP分红再投资 vs 不drip）</strong>、<strong>上市不足5年次新样本严格按实际持有期年化测算</strong>，并<strong>单独列项深度解构“全球生意 vs 全国/大部分业务在中国 vs 特定区域垄断”</strong>。
                 </p>
                 <div class="flex flex-wrap items-center gap-3 pt-2">
                     <button onclick="exportCSV()" class="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg shadow transition flex items-center gap-1.5">
-                        📥 导出完整数据 CSV
+                        📥 导出 200亿+ 全勤样本 CSV
                     </button>
                     <button onclick="exportJSON()" class="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg shadow transition flex items-center gap-1.5">
                         📋 复制结构化 JSON
                     </button>
                     <button onclick="window.print()" class="px-4 py-2 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow transition flex items-center gap-1.5">
-                        🖨️ 打印PDF / 研报视图
+                        🖨️ 打印研报视图
                     </button>
                 </div>
             </div>
@@ -189,12 +216,12 @@ parts.append(f"""<!DOCTYPE html>
         <!-- KPI Executive Summary Cards -->
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-slate-700 transition">
-                <div class="text-xs font-medium text-slate-400">持续分红全勤标的</div>
+                <div class="text-xs font-medium text-slate-400">持续分红全勤股 (≥200亿)</div>
                 <div class="text-2xl font-bold text-white mt-1 flex items-baseline gap-1">
                     {total_stocks} <span class="text-xs font-normal text-slate-400">只</span>
                 </div>
                 <div class="text-[11px] text-emerald-400 mt-1 font-semibold">
-                    100% 履约从未断档
+                    主板/创业板 核心蓝筹
                 </div>
             </div>
 
@@ -203,8 +230,8 @@ parts.append(f"""<!DOCTYPE html>
                 <div class="text-2xl font-bold text-white mt-1 flex items-baseline gap-1">
                     {total_cap/10000:.2f} <span class="text-xs font-normal text-slate-400">万亿元</span>
                 </div>
-                <div class="text-[11px] text-sky-400 mt-1">
-                    约占A股总市值 30%
+                <div class="text-[11px] text-sky-400 mt-1 font-mono">
+                    27.55 万亿大盘中枢
                 </div>
             </div>
 
@@ -219,12 +246,12 @@ parts.append(f"""<!DOCTYPE html>
             </div>
 
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-slate-700 transition">
-                <div class="text-xs font-medium text-slate-400">平均股息率 (TTM)</div>
+                <div class="text-xs font-medium text-slate-400">最新平均股息率(TTM)</div>
                 <div class="text-2xl font-bold text-amber-400 mt-1 flex items-baseline gap-1">
                     {avg_yield:.2f}%
                 </div>
                 <div class="text-[11px] text-emerald-400 mt-1 font-semibold">
-                    超10Y国债 ~310 BP
+                    超10Y国债 ~275 BP
                 </div>
             </div>
 
@@ -234,7 +261,7 @@ parts.append(f"""<!DOCTYPE html>
                     +{avg_drip:.2f}%
                 </div>
                 <div class="text-[11px] text-slate-400 mt-1">
-                    红利复投全收益 (CAGR)
+                    分红再投资全收益
                 </div>
             </div>
 
@@ -257,14 +284,14 @@ parts.append(f"""
             <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span class="text-sky-400">▌ 专题项 1</span> 业务地域范围专项深度剖析：全球生意 vs 全国/大部分业务在中国 vs 特定区域生意
+                        <span class="text-sky-400">▌ 专题项 1</span> 业务地域范围专项深度剖析：全球生意 vs 全国大部分在中国 vs 特定区域生意
                     </h3>
                     <p class="text-xs sm:text-sm text-slate-400 mt-1">
-                        响应“分析是否为全球生意，还是特定区域生意：尤其是大部分业务在中国，这个单独列项分析一下”的明确要求。
+                        单独列项剖析：剖析海外营收占比、跨国制造壁垒、内循环基础设施特许权与区域地理垄断性。
                     </p>
                 </div>
                 <span class="text-xs px-3 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                    3大核心阵营横向对比
+                    3大核心阵营横向对标
                 </span>
             </div>
 
@@ -273,15 +300,15 @@ parts.append(f"""
                 <table class="w-full text-left text-xs sm:text-sm text-slate-300">
                     <thead class="bg-slate-800 text-slate-200 text-xs font-semibold uppercase tracking-wider">
                         <tr>
-                            <th class="p-3.5 whitespace-nowrap">业务地域属性分类</th>
+                            <th class="p-3.5 whitespace-nowrap">业务地域分类</th>
                             <th class="p-3.5 whitespace-nowrap text-center">样本家数及占比</th>
                             <th class="p-3.5 whitespace-nowrap text-right">总市值(亿元)</th>
                             <th class="p-3.5 whitespace-nowrap text-right">平均海外营收占比</th>
                             <th class="p-3.5 whitespace-nowrap text-right">最新平均股息率</th>
-                            <th class="p-3.5 whitespace-nowrap text-right text-emerald-400">5年DRIP复合年化</th>
+                            <th class="p-3.5 whitespace-nowrap text-right text-emerald-400 font-bold">5年DRIP复合年化</th>
                             <th class="p-3.5 whitespace-nowrap text-right">5年非DRIP复合年化</th>
                             <th class="p-3.5 whitespace-nowrap text-right text-indigo-300">DRIP年化增益</th>
-                            <th class="p-3.5 min-w-[220px]">代表龙头标的</th>
+                            <th class="p-3.5 min-w-[240px]">代表龙头标的 (市值≥200亿)</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-800">
@@ -295,9 +322,9 @@ parts.append(f"""
                             <td class="p-3.5 text-right font-mono text-amber-300">{global_avg_yield:.2f}%</td>
                             <td class="p-3.5 text-right font-mono font-bold text-emerald-400 text-sm">+{global_avg_drip:.2f}%</td>
                             <td class="p-3.5 text-right font-mono text-slate-300">+{global_avg_nondrip:.2f}%</td>
-                            <td class="p-3.5 text-right font-mono text-indigo-300">+{global_avg_drip-global_avg_nondrip:.2f}%/年</td>
+                            <td class="p-3.5 text-right font-mono text-indigo-300 font-semibold">+{global_avg_drip-global_avg_nondrip:.2f}%/年</td>
                             <td class="p-3.5 text-slate-300 leading-relaxed text-xs">
-                                华利集团 (96.8%)、药明康德 (78.2%)、工业富联 (76.5%)、百龙创园 (58.5%)、玲珑轮胎 (49.5%)、福耀玻璃 (46.5%)、美的集团 (41.5%)、迈瑞医疗 (41.2%)、宁德时代 (34.5%)
+                                华利集团 (96.8%)、药明康德 (78.2%)、工业富联 (76.5%)、玲珑轮胎 (49.5%)、福耀玻璃 (46.5%)、紫金矿业 (42.5%)、美的集团 (41.5%)、迈瑞医疗 (41.2%)、江铃汽车 (38.5%)、三七互娱 (36.5%)、海康威视 (35.8%)、宁德时代 (34.5%)
                             </td>
                         </tr>
                         <tr class="hover:bg-slate-800/40 transition">
@@ -310,9 +337,9 @@ parts.append(f"""
                             <td class="p-3.5 text-right font-mono text-amber-300 font-semibold">{china_avg_yield:.2f}%</td>
                             <td class="p-3.5 text-right font-mono font-bold text-emerald-400 text-sm">+{china_avg_drip:.2f}%</td>
                             <td class="p-3.5 text-right font-mono text-slate-300">+{china_avg_nondrip:.2f}%</td>
-                            <td class="p-3.5 text-right font-mono text-indigo-300">+{china_avg_drip-china_avg_nondrip:.2f}%/年</td>
+                            <td class="p-3.5 text-right font-mono text-indigo-300 font-semibold">+{china_avg_drip-china_avg_nondrip:.2f}%/年</td>
                             <td class="p-3.5 text-slate-300 leading-relaxed text-xs">
-                                长江电力 (99.5%)、中国神华 (97.9%)、中国移动 (97.8%)、招商银行 (97.8%)、贵州茅台 (97.2%)、工商银行 (96.2%)、陕西煤业 (100%)、中国石油 (87.5%)
+                                长江电力 (99.5%)、中国神华 (97.9%)、中国移动 (97.8%)、招商银行 (97.8%)、贵州茅台 (97.2%)、工商银行 (96.2%)、陕西煤业 (100%)、中国核电 (100%)、宝丰能源 (100%)、华能水电 (99.5%)
                             </td>
                         </tr>
                         <tr class="hover:bg-slate-800/40 transition">
@@ -322,12 +349,12 @@ parts.append(f"""
                             <td class="p-3.5 text-center font-semibold text-white">{region_count} 家 ({region_count/total_stocks*100:.1f}%)</td>
                             <td class="p-3.5 text-right font-mono">{region_cap:,.0f}</td>
                             <td class="p-3.5 text-right font-mono text-slate-400">0.0% (国内 100%)</td>
-                            <td class="p-3.5 text-right font-mono font-bold text-amber-400">{region_avg_yield:.2f}% (最高)</td>
+                            <td class="p-3.5 text-right font-mono font-bold text-amber-400">{region_avg_yield:.2f}%</td>
                             <td class="p-3.5 text-right font-mono font-bold text-emerald-400 text-sm">+{region_avg_drip:.2f}% (最高)</td>
                             <td class="p-3.5 text-right font-mono text-slate-300">+{region_avg_nondrip:.2f}%</td>
                             <td class="p-3.5 text-right font-mono font-bold text-indigo-300">+{region_avg_drip-region_avg_nondrip:.2f}%/年</td>
                             <td class="p-3.5 text-slate-300 leading-relaxed text-xs">
-                                粤高速A (粤港澳100%)、宁沪高速 (江苏长三角100%)、深高速 (大湾区100%)、塔牌集团 (粤东100%)、荣晟环保 (浙江平湖100%)
+                                宁沪高速 (江苏长三角黄金通道100%)、深高速 (深圳及大湾区路桥100%)、粤高速A (粤港澳大湾区高速100%)
                             </td>
                         </tr>
                     </tbody>
@@ -339,65 +366,65 @@ parts.append(f"""
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 hover:border-sky-500/50 transition shadow-md">
                     <div class="flex items-center justify-between">
                         <span class="px-2.5 py-1 text-xs font-semibold rounded bg-sky-500/20 text-sky-400 border border-sky-500/30">
-                            全球生意阵营 (13家)
+                            全球生意模式 (12家)
                         </span>
                         <span class="text-xs text-slate-400 font-mono">平均海外占比 {global_avg_overseas:.1f}%</span>
                     </div>
-                    <h4 class="text-base font-bold text-white">跨国供应链整合与全球市占率领先</h4>
+                    <h4 class="text-base font-bold text-white">跨国供应链整合与全球市占率引领</h4>
                     <p class="text-xs text-slate-300 leading-relaxed">
-                        入选企业具备深厚的<strong>跨国本土化制造、全球分销渠道与全球研发网络</strong>。以福耀玻璃为例，在欧美直接投资设厂实现主机厂近距配套；华利集团将核心制造能力布局在越南和印尼，直连全球顶级运动品牌采购体系；工业富联为北美核心CSP云巨头提供全球顶尖AI算力硬件制造。
+                        入选企业具备深厚的<strong>跨国本土化制造、海外矿山资源开发、全球分销与OEM深度绑定</strong>。例如紫金矿业海外铜金矿山贡献超四成利润；福耀玻璃在美欧拥有本地化汽车玻璃工厂；工业富联为北美AI云厂商提供全球服务器制造；华利集团在越南、印尼拥有庞大鞋履代工基地。
                     </p>
                     <div class="border-t border-slate-800 pt-2 text-[11px] text-slate-400">
-                        <span class="font-semibold text-slate-300">地缘与宏观对冲：</span>能有效分散单一国内宏观周期波动，享受海外高通胀下的产品提价红利；但面临贸易关税政策扰动与合规风险。
+                        <span class="font-semibold text-slate-300">宏观与地缘对冲：</span>能有效分散单一国内宏观周期波动，享有海外通胀提价与汇兑收益；但面临贸易关税政策扰动与出口合规审查。
                     </div>
                 </div>
 
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 hover:border-emerald-500/50 transition shadow-md">
                     <div class="flex items-center justify-between">
                         <span class="px-2.5 py-1 text-xs font-semibold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            全国/大部分业务在中国 (39家)
+                            大部分业务在中国 (32家)
                         </span>
-                        <span class="text-xs text-slate-400 font-mono">市值占比 {china_cap/total_cap*100:.1f}%</span>
+                        <span class="text-xs text-slate-400 font-mono">总市值 24.77 万亿 (占89.9%)</span>
                     </div>
-                    <h4 class="text-base font-bold text-white">14亿人口大市场内循环基础设施与垄断特许</h4>
+                    <h4 class="text-base font-bold text-white">14亿人口大内循环基础设施与垄断特许</h4>
                     <p class="text-xs text-slate-300 leading-relaxed">
-                        占据持续分红标的的绝对主流（市值达23.9万亿元）。依托中国庞大的人口红利、独特的自然资源禀赋与国家战略基础设施。贵州茅台掌控独家酱酒微生物环境与社交文化心智；长江电力坐拥长江干流6座超级水电站形成不可复制的零燃料发电垄断；三大通信巨头与四大国有银行构筑国家数字与金融血脉。
+                        占据持续分红标的的绝对中枢。依托中国超大规模市场、不可复制的自然禀赋与国家战略基础设施。长江电力掌控三峡等六座超级梯级水电站；中国神华掌控煤电运一体化；中国核电拥有国家特许运营双寡头牌照；三大电信运营商与四大国有行构筑数字与金融动脉。
                     </p>
                     <div class="border-t border-slate-800 pt-2 text-[11px] text-slate-400">
-                        <span class="font-semibold text-slate-300">地缘与宏观对冲：</span>完全免疫外部贸易关税与长臂管辖，现金流极度透明确定，主权信用评级强韧；但受国内信贷脉冲与内需消费倾向影响。
+                        <span class="font-semibold text-slate-300">宏观与地缘对冲：</span>完全免疫外部贸易关税与长臂管辖，现金流极度透明确定，主权信用评级强韧；受国内信贷与内需消费倾向主导。
                     </div>
                 </div>
 
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 hover:border-amber-500/50 transition shadow-md">
                     <div class="flex items-center justify-between">
                         <span class="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                            特定区域垄断生意 (5家)
+                            特定区域生意 (3家)
                         </span>
                         <span class="text-xs text-amber-400 font-mono">平均DRIP年化 +{region_avg_drip:.2f}% (第一)</span>
                     </div>
-                    <h4 class="text-base font-bold text-white">微观地理垄断与极高现金分红率提款机</h4>
+                    <h4 class="text-base font-bold text-white">黄金经济动脉与极致现金分红提款机</h4>
                     <p class="text-xs text-slate-300 leading-relaxed">
-                        核心资产严格绑定在特定行政区域或经济动脉内。粤高速A、深高速深耕粤港澳大湾区核心高速路桥；宁沪高速扼守上海至南京黄金通道；塔牌集团依靠水泥200公里经济运输半径垄断粤东；荣晟环保受长三角排污配额指标保护。资本开支极低，自由现金流充沛。
+                        核心资产100%位于中国经济最活跃、车流量最饱和的地理大动脉。宁沪高速扼守长三角上海至南京黄金通道；粤高速A与深高速牢牢掌控粤港澳大湾区核心高速路网。路桥资产基本完成早期高资本开支折旧，净现金流转化率超100%。
                     </p>
                     <div class="border-t border-slate-800 pt-2 text-[11px] text-slate-400">
-                        <span class="font-semibold text-slate-300">地缘与宏观对冲：</span>分红率普遍超70%-100%，平均股息率高达6.78%为三大类之冠；成长虽受地理边界制约，但DRIP复投复利极其惊人！
+                        <span class="font-semibold text-slate-300">宏观与地缘对冲：</span>分红率普遍超70%，平均股息率达5.62%，近5年 DRIP 复合年化高达 +14.17%，是稳健防守投资者的极佳复利标的。
                     </div>
                 </div>
             </div>
         </section>
 """)
 
-# Section 2: Market Cap Analysis
+# Section 2: Market Cap Stats (>= 200亿)
 parts.append(f"""
-        <!-- Section 2: 市值全景统计与结构分级画像 -->
+        <!-- Section 2: 市值全景统计与结构分级画像 (≥200亿) -->
         <section id="marketcap-stats" class="space-y-6 pt-4">
             <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span class="text-sky-400">▌ 专题项 2</span> 市值全景统计与层级分布画像
+                        <span class="text-sky-400">▌ 专题项 2</span> 市值全景统计与层级分布画像 (≥200亿全勤样本)
                     </h3>
                     <p class="text-xs sm:text-sm text-slate-400 mt-1">
-                        深入统计入选标的的市值结构、层级特征、极端值以及市值与分红率的关联规律。
+                        深入统计200亿市值以上全勤样本的市值规模、阶梯分布、集中度及股息率相关性。
                     </p>
                 </div>
                 <span class="text-xs px-3 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
@@ -405,55 +432,45 @@ parts.append(f"""
                 </span>
             </div>
 
-            <!-- 5 Tiers Grid -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <!-- 4 Tiers Grid for >= 200亿 -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center hover:border-purple-500/50 transition">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">万亿超级巨头</span>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">万亿超级巨头 (≥10,000亿)</span>
                     <div class="text-2xl font-bold text-white mt-2">{len(tier_mega)} <span class="text-xs font-normal text-slate-400">家</span></div>
                     <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_mega):,.0f} 亿</div>
                     <div class="text-[11px] text-purple-400 mt-1 font-semibold">市值占比: {sum(s['market_cap'] for s in tier_mega)/total_cap*100:.1f}%</div>
                     <div class="text-[11px] text-slate-400 mt-2 border-t border-slate-800 pt-1 text-left leading-relaxed">
-                        工行、建行、中国移动、茅台、农行、中石油、中行、中海油
+                        工商银行、中国移动、建设银行、贵州茅台、农业银行、中国石油、中国银行、中国海油
                     </div>
                 </div>
 
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center hover:border-sky-500/50 transition">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">1000亿 - 10000亿</span>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">超大盘核心 (3,000-10,000亿)</span>
                     <div class="text-2xl font-bold text-white mt-2">{len(tier_large)} <span class="text-xs font-normal text-slate-400">家</span></div>
                     <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_large):,.0f} 亿</div>
                     <div class="text-[11px] text-sky-400 mt-1 font-semibold">市值占比: {sum(s['market_cap'] for s in tier_large)/total_cap*100:.1f}%</div>
                     <div class="text-[11px] text-slate-400 mt-2 border-t border-slate-800 pt-1 text-left leading-relaxed">
-                        招行、神华、宁德时代、平安、中石化、长电、美的、工业富联等
+                        招行、神华、宁德时代、平安、中石化、长电、电信、交行、五粮液、美的、邮储、工业富联、紫金矿业、迈瑞
                     </div>
                 </div>
 
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center hover:border-emerald-500/50 transition">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">200亿 - 1000亿</span>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">大盘领军白马 (1,000-3,000亿)</span>
                     <div class="text-2xl font-bold text-white mt-2">{len(tier_mid)} <span class="text-xs font-normal text-slate-400">家</span></div>
                     <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_mid):,.0f} 亿</div>
                     <div class="text-[11px] text-emerald-400 mt-1 font-semibold">市值占比: {sum(s['market_cap'] for s in tier_mid)/total_cap*100:.1f}%</div>
                     <div class="text-[11px] text-slate-400 mt-2 border-t border-slate-800 pt-1 text-left leading-relaxed">
-                        双汇、华利、时代电气、宁沪、华东医药、阿胶、三七、粤高速等
+                        恒瑞、海康、汾酒、陕煤、中建、海天、中国核电、宝丰能源、华能水电、伊利、福耀、大秦、药明、片仔癀
                     </div>
                 </div>
 
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center hover:border-amber-500/50 transition">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">50亿 - 200亿</span>
-                    <div class="text-2xl font-bold text-white mt-2">{len(tier_small)} <span class="text-xs font-normal text-slate-400">家</span></div>
-                    <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_small):,.0f} 亿</div>
-                    <div class="text-[11px] text-amber-400 mt-1 font-semibold">平均股息率: 5.08%</div>
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">中大盘高息绩优 (200-1,000亿)</span>
+                    <div class="text-2xl font-bold text-white mt-2">{len(tier_growth)} <span class="text-xs font-normal text-slate-400">家</span></div>
+                    <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_growth):,.0f} 亿</div>
+                    <div class="text-[11px] text-amber-400 mt-1 font-semibold">平均股息率: 5.61%</div>
                     <div class="text-[11px] text-slate-400 mt-2 border-t border-slate-800 pt-1 text-left leading-relaxed">
-                        吉比特、江中药业、塔牌、思维列控、佛山照明、百龙创园、永新股份
-                    </div>
-                </div>
-
-                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center hover:border-rose-500/50 transition">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">&lt; 50亿 微盘精选</span>
-                    <div class="text-2xl font-bold text-white mt-2">{len(tier_micro)} <span class="text-xs font-normal text-slate-400">家</span></div>
-                    <div class="text-xs text-slate-300 mt-1">合计: {sum(s['market_cap'] for s in tier_micro):,.0f} 亿</div>
-                    <div class="text-[11px] text-rose-400 mt-1 font-bold">平均股息率: 7.14%</div>
-                    <div class="text-[11px] text-slate-400 mt-2 border-t border-slate-800 pt-1 text-left leading-relaxed">
-                        咸亨国际、方盛制药、荣晟环保、汇洁股份、密封科技
+                        双汇发展、华利集团、宁沪高速、华东医药、东阿阿胶、三七互娱、玲珑轮胎、达仁堂、深高速、粤高速A、江铃汽车
                     </div>
                 </div>
             </div>
@@ -461,16 +478,16 @@ parts.append(f"""
             <!-- Deep Statistical Insights -->
             <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-3 text-xs sm:text-sm text-slate-300">
                 <h4 class="font-bold text-white flex items-center gap-2">
-                    <span class="text-sky-400">📊</span> 市值量化规律与分红纪律深度洞察
+                    <span class="text-sky-400">📊</span> 200亿+ 市值门槛过滤后的关键量化特征
                 </h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 leading-relaxed">
-                    <div class="space-y-1">
-                        <strong class="text-slate-100">1. “头部航母”高度集中（帕累托法则）：</strong>
-                        前8只万亿级巨头合计总市值达14.61万亿元，占样本总市值的54.9%。这批巨头拥有国家级基础设施与行业特许牌照，抗周期能力极强，成为全市场分红金额超千亿的绝对中流砥柱。
+                    <div>
+                        <strong class="text-slate-100">1. 流动性与机构定价权压舱石：</strong>
+                        总市值达到 27.55 万亿元，在过滤掉微盘小市值股票后，该组合完全由公募基金重仓、保险资金底仓以及外资陆股通的核心标的构成。标的换手率适中，冲击成本极低，适合容纳大规模配置资金。
                     </div>
-                    <div class="space-y-1">
-                        <strong class="text-slate-100">2. 微盘全勤股展现“逆天股息率”：</strong>
-                        市值在50亿以下的5只全勤微盘标的（如荣晟环保、汇洁股份），其平均股息率高达7.14%，甚至部分标的股息率超过10%-11%。这证明只要经营活动现金流扎实，中小盘企业同样能依托高分红实现极佳的复利雪球效应。
+                    <div>
+                        <strong class="text-slate-100">2. 剔除科创板与北交所后的估值安全性：</strong>
+                        主板与创业板大中盘分红股的盈利成熟度更高，几乎全部跨越了早期研发与重资产扩张的高风险期。自由现金流充沛度更高，平均股息率达到 4.55%，显著超越 10 年期国债无风险收益率。
                     </div>
                 </div>
             </div>
@@ -491,7 +508,7 @@ parts.append(f"""
                     </p>
                 </div>
                 <span class="text-xs px-3 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold font-mono">
-                    全市场平均DRIP年化 +8.65%
+                    样本平均DRIP年化 +{avg_drip:.2f}%
                 </span>
             </div>
 
@@ -499,7 +516,7 @@ parts.append(f"""
             <div class="space-y-3">
                 <div class="flex items-center justify-between">
                     <div class="text-xs font-semibold text-slate-300">
-                        🏆 近5年 DRIP 分红再投资复合年化回报 TOP 10 领军榜
+                        🏆 近5年 DRIP 分红再投资复合年化回报 TOP 10 领军榜 (≥200亿标的)
                     </div>
                     <span class="text-[11px] text-slate-400">注：不足5年者严格按自上市日至今实际持有期年化</span>
                 </div>
@@ -550,7 +567,7 @@ parts.append(f"""
                 </div>
             </div>
 
-            <!-- Compounding Simulation Tool (Interactive DRIP Calculator) -->
+            <!-- Compounding Simulation Tool -->
             <div class="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-900/40 rounded-2xl p-6 space-y-4 shadow-xl">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -558,7 +575,7 @@ parts.append(f"""
                             <span>🧮</span> 交互式 DRIP 复利“滚雪球”财富效应模拟器
                         </h4>
                         <p class="text-xs text-slate-300 mt-0.5">
-                            测算在全样本均值收益率下，DRIP分红再投资相比不复投产生的惊人财富差距。
+                            测算在200亿+全勤样本均值收益率（DRIP +9.61% vs 非DRIP +5.29%）下，分红再投资相比不复投产生的财富差异。
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
@@ -583,18 +600,18 @@ parts.append(f"""
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                     <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
                         <div class="text-xs text-slate-400">不复投 (Non-DRIP) 资产终值</div>
-                        <div id="resNonDRIP" class="text-xl font-bold text-slate-200 mt-1 font-mono">¥ 121,799</div>
-                        <div id="resNonDRIPGain" class="text-[11px] text-slate-400 mt-0.5">累计总收益: +21.8%</div>
+                        <div id="resNonDRIP" class="text-xl font-bold text-slate-200 mt-1 font-mono">¥ 129,400</div>
+                        <div id="resNonDRIPGain" class="text-[11px] text-slate-400 mt-0.5">累计总收益: +29.4%</div>
                     </div>
                     <div class="bg-slate-900/80 border border-indigo-700/50 rounded-xl p-4 text-center">
                         <div class="text-xs text-indigo-300 font-semibold">DRIP 分红再投资 资产终值</div>
-                        <div id="resDRIP" class="text-xl font-bold text-emerald-400 mt-1 font-mono">¥ 151,416</div>
-                        <div id="resDRIPGain" class="text-[11px] text-emerald-400 mt-0.5 font-semibold">累计总收益: +51.4%</div>
+                        <div id="resDRIP" class="text-xl font-bold text-emerald-400 mt-1 font-mono">¥ 158,210</div>
+                        <div id="resDRIPGain" class="text-[11px] text-emerald-400 mt-0.5 font-semibold">累计总收益: +58.2%</div>
                     </div>
                     <div class="bg-slate-900/80 border border-emerald-700/50 rounded-xl p-4 text-center">
                         <div class="text-xs text-emerald-300 font-semibold">DRIP 创造的超额财富净增量</div>
-                        <div id="resExcess" class="text-xl font-bold text-indigo-300 mt-1 font-mono">+¥ 29,617</div>
-                        <div id="resExcessRatio" class="text-[11px] text-indigo-300 mt-0.5 font-semibold">终值收益差距达 2.36 倍</div>
+                        <div id="resExcess" class="text-xl font-bold text-indigo-300 mt-1 font-mono">+¥ 28,810</div>
+                        <div id="resExcessRatio" class="text-[11px] text-indigo-300 mt-0.5 font-semibold">净收益高出 98.0%</div>
                     </div>
                 </div>
             </div>
@@ -603,7 +620,7 @@ parts.append(f"""
 
 # Section 4: Sub-5 Years
 parts.append(f"""
-        <!-- Section 4: 上市不足5年次新全勤股专项统计 -->
+        <!-- Section 4: 上市不足5年次新全勤股专项统计 (≥200亿) -->
         <section id="sub5y-stocks" class="space-y-6 pt-4">
             <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
                 <div>
@@ -611,11 +628,11 @@ parts.append(f"""
                         <span class="text-sky-400">▌ 专题项 4</span> 上市不足5年次新全勤分红样本专项统计 (实际持有期折算年化)
                     </h3>
                     <p class="text-xs sm:text-sm text-slate-400 mt-1">
-                        严格落实用户要求：<strong>“第1点中提到的，如果是上市不到5年，在这一点中也继续统计”</strong>。自上市日至今实际年限折算复合年化 CAGR。
+                        严格落实用户要求：<strong>“第1点中提到的，如果是上市不到5年，在这一点中也继续统计”</strong>。在≥200亿市值区间内共有3家，自上市日至今实际年限折算复合年化 CAGR。
                     </p>
                 </div>
                 <span class="text-xs px-3 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono">
-                    7只次新全勤精选
+                    3只次新200亿+全勤标的
                 </span>
             </div>
 
@@ -665,23 +682,23 @@ parts.append(f"""
                 </table>
             </div>
             <div class="text-xs text-slate-400 bg-slate-900/60 p-4 rounded-xl border border-slate-800 leading-relaxed">
-                <strong>📌 次新标的深度点评：</strong>
-                中国移动与中国海油分别于2022年初回归A股IPO，上市以来均维持了100%全勤分红（含年中与年度派现），派现规模超千亿，且上市以来的年化复合回报分别高达 22.9% 与 32.8%；百龙创园、咸亨国际、密封科技、华利集团、时代电气等均在上市章程中白纸黑字写入高比例分红承诺，累计现金分红甚至已超过首发IPO募资净额，成为次新板块中稀缺的价值定海神针。
+                <strong>📌 次新高市值标的深度点评：</strong>
+                中国移动与中国海油分别于2022年初回归A股IPO，上市以来均维持了100%全勤分红（含年中与年度派现），派现规模超千亿，且上市以来的年化复合回报分别高达 22.9% 与 32.8%；华利集团作为全球第二大运动鞋履制造龙头，生产基地布局于越南和印尼，客户全部为全球跨国巨头，上市4年分红率持续稳定在60%以上。
             </div>
         </section>
 """)
 
 # Section 5: Master Table & Interactive Engine
 parts.append(f"""
-        <!-- Section 5: 全维度交互式检索与数据中心 -->
+        <!-- Section 5: 全维度交互式检索与数据中心 (47只) -->
         <section id="data-table-section" class="space-y-6 pt-4">
             <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-3">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span class="text-sky-400">▌ 全景数据中心</span> A股持续分红全勤个股全维度数据库 (57只)
+                        <span class="text-sky-400">▌ 全景数据中心</span> A股持续分红全勤个股全维度数据库 (市值≥200亿 · 47只)
                     </h3>
                     <p class="text-xs sm:text-sm text-slate-400 mt-1">
-                        支持多条件复合筛选（业务地域类型、市值阶梯、上市年限）、关键字搜索与动态多列排序。
+                        已剔除北交所与科创板688，市值全部在200亿元以上。支持多条件复合筛选、关键字搜索与动态多列排序。
                     </p>
                 </div>
                 <div class="text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
@@ -710,12 +727,11 @@ parts.append(f"""
                     <div>
                         <label class="block text-xs font-semibold text-slate-300 mb-1">💰 市值规模梯队</label>
                         <select id="capTierFilter" onchange="filterTable()" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500">
-                            <option value="ALL">全部市值规模</option>
+                            <option value="ALL">全部市值规模 (≥200亿)</option>
                             <option value="MEGA">万亿级超级巨头 (≥10,000亿)</option>
-                            <option value="LARGE">千亿核心资产 (1,000-10,000亿)</option>
-                            <option value="MID">中盘绩优蓝筹 (200-1,000亿)</option>
-                            <option value="SMALL">细分隐形龙头 (50-200亿)</option>
-                            <option value="MICRO">微盘高息精选 (&lt;50亿)</option>
+                            <option value="LARGE">超大盘核心 (3,000-10,000亿)</option>
+                            <option value="MID">大盘领军白马 (1,000-3,000亿)</option>
+                            <option value="GROWTH">中大盘高息绩优 (200-1,000亿)</option>
                         </select>
                     </div>
 
@@ -733,9 +749,9 @@ parts.append(f"""
                         <select id="yearsFilter" onchange="filterTable()" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500">
                             <option value="ALL">全部连续年限</option>
                             <option value="25PLUS">25 年以上 (老牌常青藤)</option>
-                            <option value="15TO24">15 - 24 年 (核心成熟标杆)</option>
+                            <option value="15TO24">15 - 24 年 (成熟核心标杆)</option>
                             <option value="5TO14">5 - 14 年 (稳健高分红)</option>
-                            <option value="LT5">&lt; 5 年 (全勤新锐)</option>
+                            <option value="LT5">&lt; 5 年 (全勤新秀)</option>
                         </select>
                     </div>
                 </div>
@@ -776,34 +792,34 @@ parts.append(f"""
         <!-- Section 6: 机构研判与资产配置策略 -->
         <section class="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
             <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                <span class="text-sky-400">▌ 总结与投资启示</span> 持续分红资产的配置哲学与核心结论
+                <span class="text-sky-400">▌ 总结与投资启示</span> 持续分红核心资产的配置哲学与核心结论
             </h3>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs sm:text-sm text-slate-300 leading-relaxed">
                 <div class="bg-slate-850/60 p-5 rounded-xl border border-slate-800 space-y-2">
                     <h4 class="font-bold text-white flex items-center gap-1.5">
-                        <span class="text-emerald-400">1.</span> “分红全勤”是抵御假白马的最强过滤器
+                        <span class="text-emerald-400">1.</span> “分红全勤 + 200亿市值”铸造最高确定性
                     </h4>
                     <p>
-                        A股三十多年历史中，数千家企业曾经历周期巅峰与滑落，唯有极少数能够坚持“自上市以来每年不间断分红”。这证明了其净利润具备极高含金量（真金白银现金流而非应收账款空转），且管理层具备克制盲目过度扩张、尊重股东价值的长期契约精神。
+                        将市值门槛设定在200亿元并剔除北交所与科创板，过滤掉了高研发不确定性与微盘投机流动性风险。入选的47只核心资产总市值达到27.55万亿元，展现了极强的商业成熟度、充裕的自由现金流和坚决履行股东回报的治理契约。
                     </p>
                 </div>
 
                 <div class="bg-slate-850/60 p-5 rounded-xl border border-slate-800 space-y-2">
                     <h4 class="font-bold text-white flex items-center gap-1.5">
-                        <span class="text-sky-400">2.</span> DRIP 是长期跑赢通胀与大盘的核武器
+                        <span class="text-sky-400">2.</span> DRIP 是长期复利的核心引擎
                     </h4>
                     <p>
-                        统计数据显示，近5年DRIP全收益年化平均达8.65%，相比非DRIP年化的4.02%产生了+4.64%/年的超额复利。在市场弱势震荡时，分红再投资能够以低成本持续吸纳更多廉价股份，当均值回归来临时，实现持股数量与股价的双重戴维斯双击。
+                        统计数据显示，近5年DRIP全收益年化平均达9.61%，相比非DRIP年化的5.29%产生了+4.32%/年的超额复利。在市场弱势震荡时，分红再投资能够以低估值持续吸纳更多廉价股份，当均值回归来临时，实现持股数量与股价的双重戴维斯双击。
                     </p>
                 </div>
 
                 <div class="bg-slate-850/60 p-5 rounded-xl border border-slate-800 space-y-2">
                     <h4 class="font-bold text-white flex items-center gap-1.5">
-                        <span class="text-indigo-400">3.</span> “全球制造龙头 + 国内垄断印钞机”哑铃配置
+                        <span class="text-indigo-400">3.</span> “全球资源制造龙头 + 国内垄断印钞机”哑铃配置
                     </h4>
                     <p>
-                        对于长期资本配置而言，建议构建“两极平衡哑铃”：一端重仓大部分业务在中国的公用事业与国家能源资产（长江电力、中国神华、大秦铁路、四大行），获取类永续债的高确定性现金流；另一端精选海外业务占比高、具备全球定价权的制造领航者（福耀玻璃、工业富联、宁德时代），分享全球工业智能化红利。
+                        建议构建“两极平衡哑铃”：一端重仓大部分业务在中国的公用事业与国家能源资产（长江电力、中国神华、华能水电、中国核电、四大行），获取类永续债的高确定性现金流；另一端精选海外业务占比高、具备全球定价权的矿产与制造领航者（紫金矿业、福耀玻璃、工业富联、宁德时代），分享全球工业红利。
                     </p>
                 </div>
             </div>
@@ -814,7 +830,7 @@ parts.append(f"""
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-slate-900/80 py-8 text-center text-xs text-slate-500">
         <div class="max-w-7xl mx-auto px-4 space-y-2">
-            <p>A股上市以来持续分红全勤标的量化深度研究系统 · 数据基准日：2026年9月</p>
+            <p>A股上市以来持续分红全勤标的深度研报 (市值≥200亿 · 排除北交所/688) · 数据基准日：2026年9月</p>
             <p>免责声明：本数据报表及量化统计仅供金融学术研究与策略回测参考，不构成任何直接投资建议与买卖推荐。</p>
         </div>
     </footer>
@@ -892,10 +908,9 @@ parts.append(f"""
                 if (scope !== 'ALL' && s.business_scope !== scope) return false;
 
                 if (capTier === 'MEGA' && s.market_cap < 10000) return false;
-                if (capTier === 'LARGE' && (s.market_cap < 1000 || s.market_cap >= 10000)) return false;
-                if (capTier === 'MID' && (s.market_cap < 200 || s.market_cap >= 1000)) return false;
-                if (capTier === 'SMALL' && (s.market_cap < 50 || s.market_cap >= 200)) return false;
-                if (capTier === 'MICRO' && s.market_cap >= 50) return false;
+                if (capTier === 'LARGE' && (s.market_cap < 3000 || s.market_cap >= 10000)) return false;
+                if (capTier === 'MID' && (s.market_cap < 1000 || s.market_cap >= 3000)) return false;
+                if (capTier === 'GROWTH' && (s.market_cap < 200 || s.market_cap >= 1000)) return false;
 
                 if (listing === 'GTE5' && s.is_less_than_5y) return false;
                 if (listing === 'LT5' && !s.is_less_than_5y) return false;
@@ -989,7 +1004,7 @@ parts.append(f"""
 
             const gainNonDRIP = ((endNonDRIP - p) / p * 100).toFixed(1);
             const gainDRIP = ((endDRIP - p) / p * 100).toFixed(1);
-            const ratio = (endDRIP / endNonDRIP).toFixed(2);
+            const ratio = ((gainDRIP - gainNonDRIP) / gainNonDRIP * 100).toFixed(1);
 
             document.getElementById('resNonDRIP').innerText = '¥ ' + Math.round(endNonDRIP).toLocaleString();
             document.getElementById('resNonDRIPGain').innerText = `累计总收益: +${{gainNonDRIP}}%`;
@@ -998,7 +1013,7 @@ parts.append(f"""
             document.getElementById('resDRIPGain').innerText = `累计总收益: +${{gainDRIP}}%`;
 
             document.getElementById('resExcess').innerText = '+¥ ' + Math.round(excess).toLocaleString();
-            document.getElementById('resExcessRatio').innerText = `终值收益差距达 ${{ratio}} 倍`;
+            document.getElementById('resExcessRatio').innerText = `净收益高出 ${{ratio}}%`;
         }}
 
         function exportCSV() {{
@@ -1034,14 +1049,14 @@ parts.append(f"""
             const url = URL.createObjectURL(csvBlob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "A股上市以来持续分红全勤股分析报表.csv";
+            a.download = "A股持续分红全勤股分析报表(200亿+).csv";
             a.click();
             URL.revokeObjectURL(url);
         }}
 
         function exportJSON() {{
             navigator.clipboard.writeText(JSON.stringify(STOCKS_DATA, null, 2)).then(() => {{
-                alert("已成功复制 57 只持续分红全勤股结构化 JSON 数据到剪贴板！");
+                alert("已成功复制 47 只持续分红全勤股结构化 JSON 数据到剪贴板！");
             }}).catch(() => {{
                 alert("复制失败，请直接使用导出 CSV 功能。");
             }});
